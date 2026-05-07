@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy My Face Premium</title>
+    <style>
+        * { box-sizing: border-box; touch-action: manipulation; }
+        body { 
+            margin: 0; padding: 0; overflow: hidden; 
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; background: #111; font-family: 'Arial', sans-serif;
+        }
+        canvas { 
+            max-width: 100%; max-height: 100vh;
+            border: 3px solid #fff; border-radius: 15px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Responsive Setting
+const ratio = 320 / 480;
+canvas.height = window.innerHeight > 600 ? 600 : window.innerHeight;
+canvas.width = canvas.height * ratio;
+
+// --- 1. LOAD ASSETS ---
+const birdImg = new Image();
+birdImg.src = 'burung.png'; 
+
+const bgImg = new Image();
+bgImg.src = 'background.jpg'; // PASTIKAN FILE INI ADA DI FOLDER
+
+// --- 2. AUDIO & MUSIC ---
+const bgMusic = new Audio('music.mp3'); // PASTIKAN FILE INI ADA DI FOLDER
+bgMusic.loop = true;
+bgMusic.volume = 0.5;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSfx(freq, type, duration) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
+
+// --- 3. GAME VARIABLES ---
+let bird = { x: canvas.width * 0.2, y: canvas.height / 2, w: 45, h: 45, gravity: 0.5, lift: -8, velocity: 0 };
+let pipes = [];
+let score = 0;
+let frame = 0;
+let gameOver = false;
+let gameStarted = false;
+
+// --- 4. CONTROLS ---
+function handleInput(e) {
+    if(e) e.preventDefault();
+    
+    if(!gameStarted) { 
+        gameStarted = true; 
+        bgMusic.play().catch(err => console.log("Musik butuh interaksi user"));
+        return; 
+    }
+    
+    if(gameOver) { location.reload(); return; }
+    
+    bird.velocity = bird.lift;
+    playSfx(400, 'triangle', 0.1);
+}
+
+window.addEventListener("keydown", (e) => { if(e.code === "Space") handleInput(); });
+canvas.addEventListener("touchstart", handleInput);
+canvas.addEventListener("mousedown", (e) => { if(e.button === 0) handleInput(); });
+
+function createPipe() {
+    let gap = 140;
+    let minH = 60;
+    let height = Math.floor(Math.random() * (canvas.height - gap - (minH * 2))) + minH;
+    pipes.push({ x: canvas.width, top: height, bottom: height + gap, passed: false });
+}
+
+function update() {
+    if (!gameStarted || gameOver) return;
+
+    bird.velocity += bird.gravity;
+    bird.y += bird.velocity;
+
+    if (frame % 95 === 0) createPipe();
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= 2.8;
+
+        // Collision
+        if (bird.x + bird.w * 0.7 > pipes[i].x && bird.x + bird.w * 0.3 < pipes[i].x + 52) {
+            if (bird.y + bird.h * 0.2 < pipes[i].top || bird.y + bird.h * 0.8 > pipes[i].bottom) {
+                endGame();
+            }
+        }
+
+        // Score
+        if (!pipes[i].passed && pipes[i].x < bird.x) {
+            score++;
+            pipes[i].passed = true;
+            playSfx(600, 'sine', 0.1);
+        }
+        if (pipes[i].x + 52 < 0) pipes.splice(i, 1);
+    }
+
+    if (bird.y + bird.h > canvas.height || bird.y < 0) endGame();
+    frame++;
+}
+
+function endGame() {
+    if(!gameOver) {
+        gameOver = true;
+        bgMusic.pause(); // Musik berhenti saat kalah
+        playSfx(100, 'sawtooth', 0.5);
+    }
+}
+
+function draw() {
+    // 1. Draw Background Foto
+    ctx.clearRect(0,0, canvas.width, canvas.height);
+    if (bgImg.complete && bgImg.naturalWidth !== 0) {
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = "#4a757a"; // Warna jika gambar bg gagal
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. Draw Bird
+    ctx.save();
+    let angle = Math.min(Math.PI/4, Math.max(-Math.PI/4, (bird.velocity/12)));
+    ctx.translate(bird.x + bird.w/2, bird.y + bird.h/2);
+    ctx.rotate(angle);
+    ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h);
+    ctx.restore();
+
+    // 3. Draw Pipes
+    pipes.forEach(p => {
+        // Efek gradasi pipa
+        let grad = ctx.createLinearGradient(p.x, 0, p.x + 50, 0);
+        grad.addColorStop(0, '#2ecc71');
+        grad.addColorStop(1, '#27ae60');
+        ctx.fillStyle = grad;
+        
+        ctx.fillRect(p.x, 0, 52, p.top);
+        ctx.fillRect(p.x, p.bottom, 52, canvas.height - p.bottom);
+        
+        ctx.strokeStyle = "white"; ctx.lineWidth = 2;
+        ctx.strokeRect(p.x, 0, 52, p.top);
+        ctx.strokeRect(p.x, p.bottom, 52, canvas.height - p.bottom);
+    });
+
+    // 4. Score
+    ctx.fillStyle = "white";
+    ctx.font = "bold 50px Arial";
+    ctx.textAlign = "center";
+    ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.fillText(score, canvas.width / 2, 80);
+    ctx.shadowBlur = 0;
+
+    // 5. Overlays
+    if (!gameStarted) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px Arial";
+        ctx.fillText("KLIK UNTUK MULAI & MUSIK", canvas.width/2, canvas.height/2);
+    }
+
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "bold 30px Arial";
+        ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2 - 20);
+        ctx.font = "18px Arial";
+        ctx.fillText("Skor: " + score, canvas.width/2, canvas.height/2 + 20);
+        ctx.fillText("Klik untuk main lagi", canvas.width/2, canvas.height/2 + 60);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
